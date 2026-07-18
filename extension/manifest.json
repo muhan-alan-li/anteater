@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Anteater - Student Loan Advisor",
+  "version": "0.1.0",
+  "description": "Chatbot for Canadian federal and BC student loan guidelines",
+  "permissions": ["storage"],
+  "host_permissions": ["http://localhost:8000/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Anteater"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
