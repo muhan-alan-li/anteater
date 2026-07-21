@@ -1,8 +1,8 @@
 __pycache__/
 *.pyc
 .env
-rag/vector_store/
-*.egg-info/
 dist/
 .opencode
 .DS_Store
+node_modules/
+.vscode
