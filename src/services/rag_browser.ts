@@ -1,28 +1,20 @@
-// Index signature for chunking data
-interface Chunk {
-    text: string;
-    source: string;
-    score?: number;
+import { llmService } from '@/services/llm';
+import type { Chunk, VectorData } from '@/types';
+
+interface EmbeddingOutput {
+    data: ArrayLike<number>;
 }
 
-interface Document {
-    source: string;
-    text: string;
-}
+type EmbeddingPipeline = (
+    text: string,
+    options: { pooling: 'mean'; normalize: boolean }
+) => Promise<EmbeddingOutput>;
 
-interface VectorArray extends Array<number> { }
-
-interface VectorData {
-    corpus: Chunk[];
-    vectors: VectorArray[];
-    sources: string[];
-}
-
-// RAG service for vector search and OpenRouter API
+// RAG service for vector search and local on-device answers.
 class RAGService {
     private data: VectorData | null = null;
     private loading = false;
-    private httpClient: any = null;
+    private httpClient: EmbeddingPipeline | null = null;
 
     async loadVectorData(): Promise<void> {
         if (this.data) return;
@@ -30,7 +22,7 @@ class RAGService {
         this.loading = true;
         try {
             const response = await fetch('/assets/index.json');
-            this.data = await response.json();
+            this.data = (await response.json()) as VectorData;
         } catch (error) {
             console.error('Failed to load vector data:', error);
             this.data = { corpus: [], vectors: [], sources: [] };
@@ -49,10 +41,9 @@ class RAGService {
     async embedQuery(query: string): Promise<number[]> {
         if (!this.httpClient) {
             const { pipeline } = await import('@xenova/transformers');
-            this.httpClient = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
-                device: 'webgpu',
-                dtype: 'q8'
-            });
+            this.httpClient = (await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+                quantized: true
+            })) as unknown as EmbeddingPipeline;
         }
 
         const output = await this.httpClient(query, {
@@ -82,31 +73,7 @@ class RAGService {
     }
 
     async generateAnswer(question: string, chunks: Chunk[]): Promise<string> {
-        const context = chunks.map(c => `[Source: ${c.source}]\n${c.text}`).join('\n\n');
-        const systemPrompt = 'You are a student loan advisor for Canadian federal and BC student loan programs. Answer the user\'s question using ONLY the provided context. If the context does not contain enough information, say so. Cite the source for each claim you make. Keep the answer concise.';
-        const userPrompt = `Context:\n${context}\n\nQuestion:\n${question}`;
-
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                model: 'meta-llama/llama-3.1-8b-instruct',
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userPrompt }
-                ]
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`OpenRouter API error: ${response.status} ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        return data.choices[0].message.content;
+        return llmService.generateAnswer(question, chunks);
     }
 
     async processQuestion(question: string): Promise<{ answer: string, citations: string[] }> {
