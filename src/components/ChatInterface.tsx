@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ragService } from '../services/rag_browser';
+import { llmService } from '../services/llm';
+import type { LlmProgress } from '../services/llm';
 import { cacheService } from '../services/cache';
 import type { Conversation } from '../types';
 
@@ -15,15 +17,20 @@ export default function ChatInterface() {
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [llmProgress, setLlmProgress] = useState<LlmProgress | null>(null);
+    const [webGpuMissing] = useState(() => !llmService.isWebGpuAvailable());
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    const scrollToBottom = () => {
+    useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    };
+    }, [messages, isLoading, llmProgress]);
 
     useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
+        const unsubscribe = llmService.onProgress((report) => {
+            setLlmProgress(report.progress >= 1 ? null : report);
+        });
+        return unsubscribe;
+    }, []);
 
     const addMessage = (text: string, role: 'user' | 'assistant' | 'error', citations?: string[]) => {
         const newMessage: Message = {
@@ -31,16 +38,15 @@ export default function ChatInterface() {
             text,
             role,
             citations,
-            timestamp: Date.now()
+            timestamp: Date.now(),
         };
-        setMessages(prev => [...prev, newMessage]);
+        setMessages((prev) => [...prev, newMessage]);
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!input.trim() || isLoading) return;
+    const ask = async (rawQuestion: string) => {
+        const question = rawQuestion.trim();
+        if (!question || isLoading) return;
 
-        const question = input.trim();
         setInput('');
         addMessage(question, 'user');
         setIsLoading(true);
@@ -48,99 +54,148 @@ export default function ChatInterface() {
 
         try {
             const { answer, citations } = await ragService.processQuestion(question);
-            setMessages(prev => prev.map(msg =>
-                msg.role === 'assistant' && msg.text === ''
-                    ? { ...msg, text: answer, citations }
-                    : msg
-            ));
+            setMessages((prev) =>
+                prev.map((msg) =>
+                    msg.role === 'assistant' && msg.text === '' ? { ...msg, text: answer, citations } : msg,
+                ),
+            );
 
             const conversation: Conversation = {
                 id: Date.now().toString(),
                 title: question.substring(0, 30) + (question.length > 30 ? '...' : ''),
-                messages: messages.filter(m => m.id !== ''),
+                messages: messages.filter((m) => m.id !== ''),
                 createdAt: 0,
                 updatedAt: 0,
             };
             await cacheService.saveConversation(conversation);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'An error occurred';
-            setMessages(prev => prev.map(msg =>
-                msg.role === 'assistant' && msg.text === ''
-                    ? { ...msg, text: errorMessage, role: 'error' }
-                    : msg
-            ));
+            setMessages((prev) =>
+                prev.map((msg) =>
+                    msg.role === 'assistant' && msg.text === ''
+                        ? { ...msg, text: errorMessage, role: 'error' }
+                        : msg,
+                ),
+            );
         } finally {
             setIsLoading(false);
         }
     };
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        await ask(input);
+    };
 
     return (
-        <div className="flex flex-col h-full bg-white dark:bg-gray-900">
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {messages.length === 0 ? (
-                    <div className="text-center text-gray-500 dark:text-gray-400 mt-8">
-                        <h2 className="text-xl font-semibold mb-2">Welcome to Anteater</h2>
-                        <p>Ask me anything about Canadian federal and BC student loan programs</p>
-                    </div>
-                ) : (
-                    messages.map((message) => (
-                        <div
-                            key={message.id}
-                            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                        >
-                            <div
-                                className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                                    message.role === 'user'
-                                        ? 'bg-blue-500 text-white'
-                                        : message.role === 'error'
-                                            ? 'bg-red-100 dark:bg-red-900 text-red-900 dark:text-red-100'
-                                            : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100'
-                                }`}
-                            >
+        <div id="guide-chat" className="gc-body">
+            <h2 className="gc-h2">Ask the guide</h2>
+            <p className="mt-2">
+                Type a question below. Answers quote the saved passages and list their sources.
+            </p>
+
+            {webGpuMissing && (
+                <div className="gc-alert gc-alert-info mt-4" role="note">
+                    <p>
+                        <strong>Information: </strong>
+                        This device has no WebGPU, so answers show retrieved passages instead of
+                        generated text.
+                    </p>
+                </div>
+            )}
+
+            {messages.length === 0 ? (
+                <div className="gc-alert mt-4">
+                    <p>
+                        <strong>How to use this guide</strong>
+                    </p>
+                    <ol className="mt-2 list-decimal pl-5">
+                        <li>Type a question in the box below.</li>
+                        <li>Read the answer and check the sources listed underneath it.</li>
+                        <li>Confirm the details on the official site before you apply or repay.</li>
+                    </ol>
+                </div>
+            ) : (
+                <div className="mt-4">
+                    {messages.map((message) =>
+                        message.text === '' && message.role === 'assistant' ? null : message.role === 'user' ? (
+                            <div key={message.id} className="border-t border-gc-border py-3">
+                                <p className="font-bold">You asked:</p>
+                                <p>{message.text}</p>
+                            </div>
+                        ) : message.role === 'error' ? (
+                            <div key={message.id} className="gc-alert gc-alert-error mt-3" role="alert">
+                                <p>
+                                    <strong>Error: </strong>
+                                    {message.text}
+                                </p>
+                            </div>
+                        ) : (
+                            <div key={message.id} className="mt-1 border border-gc-border bg-gc-grey p-4">
+                                <p className="font-bold">Answer:</p>
                                 <p className="whitespace-pre-wrap">{message.text}</p>
                                 {message.citations && message.citations.length > 0 && (
-                                    <div className="mt-2 pt-2 border-t border-gray-300 dark:border-gray-700">
-                                        <div className="text-xs font-semibold">Sources:</div>
-                                        <div className="text-xs">{message.citations.join(', ')}</div>
-                                    </div>
+                                    <p className="mt-3 text-sm">
+                                        <span className="font-bold">Sources: </span>
+                                        {message.citations.join('; ')}
+                                    </p>
                                 )}
+                                <p className="mt-2 text-sm text-[#767676]">
+                                    Answered at{' '}
+                                    {new Date(message.timestamp).toLocaleTimeString([], {
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                    })}
+                                </p>
                             </div>
-                        </div>
-                    ))
-                )}
-                {isLoading && (
-                    <div className="flex justify-start">
-                        <div className="bg-gray-100 dark:bg-gray-800 px-4 py-2 rounded-lg">
-                            <div className="flex space-x-1">
-                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                            </div>
-                        </div>
-                    </div>
-                )}
-                <div ref={messagesEndRef} />
-            </div>
+                        ),
+                    )}
+                </div>
+            )}
 
-            <div className="border-t border-gray-200 dark:border-gray-700 p-4">
-                <form onSubmit={handleSubmit} className="flex gap-2">
+            {isLoading && llmProgress && (
+                <div className="mt-4 border border-gc-border p-4" role="status">
+                    <p>
+                        Preparing the on-device model: {llmProgress.text} (
+                        {Math.round(llmProgress.progress * 100)}%)
+                    </p>
+                    <div className="mt-2 h-2 w-full max-w-md bg-gc-border" aria-hidden="true">
+                        <div
+                            className="h-2 bg-gc-navy"
+                            style={{ width: `${Math.round(llmProgress.progress * 100)}%` }}
+                        />
+                    </div>
+                </div>
+            )}
+            {isLoading && !llmProgress && (
+                <p className="mt-4 font-bold" role="status">
+                    Searching saved passages...
+                </p>
+            )}
+            <div ref={messagesEndRef} />
+
+            <form onSubmit={handleSubmit} className="mt-4 border-t border-gc-border pt-4">
+                <label htmlFor="guide-question" className="font-bold">
+                    Ask a question about student loans
+                </label>
+                <p className="text-sm" id="guide-question-hint">
+                    For example: Who can get a Canada Student Loan?
+                </p>
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                     <input
+                        id="guide-question"
                         type="text"
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        placeholder="Ask about student loans..."
-                        className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
+                        aria-describedby="guide-question-hint"
+                        placeholder="Type your question"
+                        className="gc-input flex-1"
                         disabled={isLoading}
                     />
-                    <button
-                        type="submit"
-                        disabled={!input.trim() || isLoading}
-                        className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        Send
+                    <button type="submit" disabled={!input.trim() || isLoading} className="gc-btn gc-btn-primary">
+                        Ask
                     </button>
-                </form>
-            </div>
+                </div>
+            </form>
         </div>
     );
 }

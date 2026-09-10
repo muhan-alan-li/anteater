@@ -14,8 +14,8 @@ export default defineConfig({
                 name: 'Anteater - Student Loan Advisor',
                 short_name: 'Anteater',
                 description: 'Chatbot for Canadian federal and BC student loan guidelines',
-                theme_color: '#2196F3',
-                background_color: '#FFF',
+                theme_color: '#26374a',
+                background_color: '#ffffff',
                 display: 'standalone',
                 orientation: 'portrait-primary',
                 scope: '/',
@@ -26,7 +26,11 @@ export default defineConfig({
                 ]
             },
             workbox: {
-                globPatterns: ['**/*.{js,css,html,ico,png,svg}']
+                // Precache the vector index so retrieval works offline.
+                globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'],
+                // The WebLLM runtime chunk is large (~6 MB). Precache it
+                // so on-device answers work offline after the first visit.
+                maximumFileSizeToCacheInBytes: 20 * 1024 * 1024
             },
             devOptions: { enabled: true }
         })

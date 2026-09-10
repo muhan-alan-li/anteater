@@ -2,7 +2,7 @@
     "name": "Anteater - Student Loan Advisor",
     "short_name": "Anteater",
     "description": "Chatbot for Canadian federal and BC student loan guidelines",
-    "theme_color": "#2196F3",
+    "theme_color": "#26374a",
     "background_color": "#FFF",
     "display": "standalone",
     "orientation": "portrait-primary",

@@ -44,48 +44,49 @@ export default function ConversationHistory() {
     };
 
     if (loading) {
-        return (
-            <div className="flex items-center justify-center p-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-            </div>
-        );
+        return <p className="p-8">Loading saved conversations...</p>;
     }
 
     return (
-        <div className="h-full flex flex-col bg-white dark:bg-gray-900">
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-                <h2 className="text-xl font-semibold">Conversation History</h2>
+        <div className="gc-body flex h-full flex-col bg-white">
+            <div className="border-b border-gc-border p-4">
+                <h2 className="gc-h3">Conversation history</h2>
+                <p className="text-sm">Saved on this device only.</p>
             </div>
             <div className="flex-1 overflow-y-auto">
                 {conversations.length === 0 ? (
-                    <div className="text-center text-gray-500 dark:text-gray-400 p-8">
-                        No conversations yet.
-                    </div>
+                    <p className="p-8 text-center">No conversations yet.</p>
                 ) : (
-                    <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                    <ul className="divide-y divide-gc-border">
                         {conversations.map((conversation) => (
-                            <button
+                            <li
                                 key={conversation.id}
-                                onClick={() => setSelectedConversation(conversation)}
-                                className={`w-full text-left p-4 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors ${
+                                className={
                                     selectedConversation?.id === conversation.id
-                                        ? 'bg-blue-50 dark:bg-blue-900/20 border-r-2 border-blue-500'
+                                        ? 'border-l-4 border-l-gc-navy bg-gc-grey'
                                         : ''
-                                }`}
+                                }
                             >
-                                <div className="font-medium truncate">{conversation.title}</div>
-                                <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                                    {new Date(conversation.createdAt).toLocaleDateString()}
-                                </div>
                                 <button
+                                    type="button"
+                                    onClick={() => setSelectedConversation(conversation)}
+                                    className="block w-full p-4 text-left"
+                                >
+                                    <span className="block truncate font-bold">{conversation.title}</span>
+                                    <span className="mt-1 block text-sm">
+                                        {new Date(conversation.createdAt).toLocaleDateString()}
+                                    </span>
+                                </button>
+                                <button
+                                    type="button"
                                     onClick={(e) => deleteConversation(conversation.id, e)}
-                                    className="text-red-500 hover:text-red-700 mt-2 text-sm"
+                                    className="ml-4 mb-3 text-sm underline"
                                 >
                                     Delete
                                 </button>
-                            </button>
+                            </li>
                         ))}
-                    </div>
+                    </ul>
                 )}
             </div>
         </div>
