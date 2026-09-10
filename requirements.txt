@@ -1,0 +1,4 @@
+requests
+trafilatura
+sentence-transformers
+numpy
